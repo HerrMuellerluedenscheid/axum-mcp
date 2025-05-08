@@ -15,10 +15,12 @@ async fn hello_world(app_state: State<AppState>) -> String {
 
 #[tokio::main]
 async fn main() {
-    let mcp = counter::Counter::new();
-
+    let mcp = counter::Counter::new();  // Create my mcp tools
+    let router_to_all_my_mcp_tools = ...         // How can I access the router without requiring to start
+                                                 // a dedicated axum server?
     let router = Router::new()
         .route("/hello", get(hello_world))
+        .nest("/mcp", router_to_all_my_mcp_tools)  
         .with_state(AppState {
             data: "XXX".to_string(),
         });
