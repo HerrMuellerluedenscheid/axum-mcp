@@ -20,10 +20,8 @@ pub struct Counter {
 #[tool(tool_box)]
 impl Counter {
     #[allow(dead_code)]
-    pub fn new() -> Self {
-        Self {
-            counter: Arc::new(Mutex::new(0)),
-        }
+    pub fn new(counter: Arc<Mutex<i32>>) -> Self {
+        Self { counter }
     }
 
     fn _create_resource_text(&self, uri: &str, name: &str) -> Resource {
