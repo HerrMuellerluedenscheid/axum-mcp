@@ -1,11 +1,46 @@
 use std::sync::Arc;
 
+use crate::ExternalState;
 use rmcp::{
     Error as McpError, RoleServer, ServerHandler, const_string, model::*, schemars,
     service::RequestContext, tool,
 };
 use serde_json::json;
 use tokio::sync::Mutex;
+
+// define generic service trait
+pub trait DataService: Send + Sync + 'static {
+    fn get_data(&self) -> String;
+}
+
+// mock service for test
+#[derive(Clone)]
+pub(crate) struct MockDataService;
+impl DataService for MockDataService {
+    fn get_data(&self) -> String {
+        "mock dataasdfasdf".to_string()
+    }
+}
+
+// define generic server
+#[derive(Debug, Clone)]
+pub struct GenericServer<DS: DataService> {
+    data_service: Arc<DS>,
+}
+
+#[tool(tool_box)]
+impl<DS: DataService> GenericServer<DS> {
+    pub fn new(data_service: DS) -> Self {
+        Self {
+            data_service: Arc::new(data_service),
+        }
+    }
+
+    #[tool(description = "Get data from the service")]
+    async fn get_data(&self) -> String {
+        self.data_service.get_data()
+    }
+}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct StructRequest {
@@ -14,14 +49,15 @@ pub struct StructRequest {
 }
 
 #[derive(Clone)]
-pub struct Counter {
+pub struct Counter<DS> {
     counter: Arc<Mutex<i32>>,
+    external: Arc<DS>,
 }
 #[tool(tool_box)]
-impl Counter {
+impl<DS: DataService> Counter<DS> {
     #[allow(dead_code)]
-    pub fn new(counter: Arc<Mutex<i32>>) -> Self {
-        Self { counter }
+    pub fn new(counter: Arc<Mutex<i32>>, external: Arc<DS>) -> Self {
+        Self { counter, external }
     }
 
     fn _create_resource_text(&self, uri: &str, name: &str) -> Resource {
@@ -80,8 +116,7 @@ impl Counter {
     }
 }
 const_string!(Echo = "echo");
-#[tool(tool_box)]
-impl ServerHandler for Counter {
+impl<DS: DataService> ServerHandler for Counter<DS> {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,
@@ -100,9 +135,11 @@ impl ServerHandler for Counter {
         _request: Option<PaginatedRequestParam>,
         _: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
+        let data = self.external.get_data();
+
         Ok(ListResourcesResult {
             resources: vec![
-                self._create_resource_text("str:////Users/to/some/path/", "cwd"),
+                self._create_resource_text("str:////Users/to/some/path/", &data),
                 self._create_resource_text("memo://insights", "memo-name"),
             ],
             next_cursor: None,

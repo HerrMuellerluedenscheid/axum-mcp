@@ -66,6 +66,28 @@ async fn delete_handler_wrapper(
     delete_handler(state.app_state.clone(), header_map).await
 }
 
+trait ExternalState {
+    fn get_value() -> String;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct ExternalA {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct ExternalB {}
+
+impl ExternalState for ExternalA {
+    fn get_value() -> String {
+        "A".to_string()
+    }
+}
+
+impl ExternalState for ExternalB {
+    fn get_value() -> String {
+        "B".to_string()
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -92,26 +114,27 @@ async fn main() {
     let (app, transport_rx) = App::new(config.sse_keep_alive.unwrap_or(DEFAULT_AUTO_PING_INTERVAL));
     let combined_state = CombinedState {
         a: State(app_state),
-        app_state: State(app),
+        app_state: State(app.clone()),
     };
-    let sse_router = Router::new().route(
-        &config.path,
-        get(get_handler_wrapper)
-            .post(post_handler_wrapper)
-            .delete(delete_handler_wrapper),
-    );
+    let sse_router = Router::new()
+        .route(
+            &config.path,
+            get(get_handler).post(post_handler).delete(delete_handler),
+        )
+        .with_state(app);
 
     let sse_server = StreamableHttpServer {
         transport_rx,
         config,
     };
-
     let counter = Arc::new(Mutex::new(0));
-    let counter = Counter::new(counter);
+    let external = Arc::new(crate::counter::MockDataService {});
+
+    let counter = Counter::new(counter, external);
     sse_server.with_service(move || counter.clone());
     let router = Router::new()
         .route("/hello", get(hello_world))
-        .nest("/mcp", sse_router)
+        .nest_service("/mcp", sse_router)
         .with_state(Arc::from(combined_state));
 
     let app = router.into_make_service();
